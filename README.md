@@ -34,6 +34,18 @@ Use another worktree with:
 gitsnap --worktree /path/to/project save --alias checkpoint
 ```
 
+## How it works
+
+`gitsnap` uses `go-git` to maintain a separate Git object database for each
+worktree. A snapshot is a Git tree object, not a commit: `save` indexes the
+current non-ignored worktree files, writes blobs and trees into gitsnap storage,
+and prints the root tree hash.
+
+`diff` and `files` save the current tree, then compare it with the requested
+snapshot. `restore` reads files from a saved tree back into the worktree; a full
+restore also removes non-ignored files that are absent from the saved tree.
+Aliases are just names stored in `aliases.json` that point at tree hashes.
+
 ## Storage
 
 Snapshots are stored per worktree under:
