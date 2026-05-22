@@ -204,11 +204,13 @@ func (b Backend) ChangedFiles(
 		if err != nil {
 			return nil, err
 		}
-		for _, f := range []*object.File{a, b} {
-			if f != nil && !seen[f.Name] {
-				seen[f.Name] = true
-				files = append(files, f.Name)
-			}
+		if a != nil && !seen[change.From.Name] {
+			seen[change.From.Name] = true
+			files = append(files, change.From.Name)
+		}
+		if b != nil && !seen[change.To.Name] {
+			seen[change.To.Name] = true
+			files = append(files, change.To.Name)
 		}
 	}
 	sort.Strings(files)

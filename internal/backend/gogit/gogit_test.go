@@ -70,6 +70,34 @@ func TestChangedFilesAndDiff(t *testing.T) {
 	}
 }
 
+func TestChangedFilesKeepsNestedPaths(t *testing.T) {
+	worktree, store := dirs(t)
+	write(t, worktree, "one/same.txt", "one\n")
+	write(t, worktree, "two/same.txt", "two\n")
+	write(t, worktree, "dir/b.txt", "b\n")
+
+	backend := Backend{}
+	base, err := backend.Save(context.Background(), worktree, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	write(t, worktree, "one/same.txt", "one changed\n")
+	write(t, worktree, "two/same.txt", "two changed\n")
+	if err := os.Remove(filepath.Join(worktree, "dir", "b.txt")); err != nil {
+		t.Fatal(err)
+	}
+
+	files, err := backend.ChangedFiles(context.Background(), worktree, store, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"dir/b.txt", "one/same.txt", "two/same.txt"}
+	if !reflect.DeepEqual(files, want) {
+		t.Fatalf("files = %#v, want %#v", files, want)
+	}
+}
+
 func TestRestoreFull(t *testing.T) {
 	worktree, store := dirs(t)
 	write(t, worktree, ".gitignore", "ignored.log\n")
