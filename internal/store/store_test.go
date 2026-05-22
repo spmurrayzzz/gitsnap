@@ -27,11 +27,25 @@ func TestForWorktreeUsesGitsnapHome(t *testing.T) {
 	if store.AliasPath() != filepath.Join(store.Root, "aliases.json") {
 		t.Fatalf("alias path = %q", store.AliasPath())
 	}
+	initialized, err := store.Initialized()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if initialized {
+		t.Fatal("store initialized before ensure")
+	}
 	if err := store.Ensure(); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(store.RepoDir()); err != nil {
 		t.Fatal(err)
+	}
+	initialized, err = store.Initialized()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !initialized {
+		t.Fatal("store not initialized after ensure")
 	}
 	if err := store.Cleanup(); err != nil {
 		t.Fatal(err)

@@ -172,6 +172,29 @@ func TestRestoreWithNoPathSeparator(t *testing.T) {
 	}
 }
 
+func TestRunBeforeInitErrors(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home")
+	t.Setenv("GITSNAP_HOME", home)
+	worktree := t.TempDir()
+	for _, args := range [][]string{
+		{"aliases"},
+		{"save"},
+		{"resolve", "first"},
+		{"diff", "first"},
+		{"files", "first"},
+		{"restore", "first"},
+	} {
+		full := append([]string{"--worktree", worktree}, args...)
+		err := run(context.Background(), full)
+		if err == nil || !strings.Contains(err.Error(), "gitsnap init") {
+			t.Fatalf("err for %#v = %v", full, err)
+		}
+	}
+	if entries, err := os.ReadDir(home); err == nil && len(entries) != 0 {
+		t.Fatalf("storage was created before init: %#v", entries)
+	}
+}
+
 func TestListAliasesEmpty(t *testing.T) {
 	out := captureStdout(t, func() {
 		if err := listAliases(alias.Store{Path: filepath.Join(t.TempDir(), "aliases.json")}); err != nil {

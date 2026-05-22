@@ -69,6 +69,9 @@ func TestRunCanceledBackendErrors(t *testing.T) {
 	t.Setenv("GITSNAP_HOME", filepath.Join(t.TempDir(), "home"))
 	worktree := t.TempDir()
 	write(t, worktree, "a.txt", "hello\n")
+	if err := run(context.Background(), []string{"--worktree", worktree, "init"}); err != nil {
+		t.Fatal(err)
+	}
 	if err := run(context.Background(), []string{"--worktree", worktree, "save", "--alias", "first"}); err != nil {
 		t.Fatal(err)
 	}

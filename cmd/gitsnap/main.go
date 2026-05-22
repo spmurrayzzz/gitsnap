@@ -37,26 +37,40 @@ func run(ctx context.Context, args []string) error {
 		usage()
 		return nil
 	}
+	if !knownCommand(args[0]) {
+		return fmt.Errorf("unknown command %q", args[0])
+	}
 
 	ws, err := forWorktree(*worktree)
 	if err != nil {
 		return err
 	}
+	backend := gogit.Backend{}
 	if args[0] == "cleanup" {
 		if len(args) != 1 {
 			return fmt.Errorf("usage: gitsnap cleanup")
 		}
 		return ws.Cleanup()
 	}
-	if err := ws.Ensure(); err != nil {
+	if args[0] == "init" {
+		if len(args) != 1 {
+			return fmt.Errorf("usage: gitsnap init")
+		}
+		if err := ws.Ensure(); err != nil {
+			return err
+		}
+		return backend.Init(ctx, ws.Worktree, ws.RepoDir())
+	}
+	initialized, err := ws.Initialized()
+	if err != nil {
 		return err
 	}
+	if !initialized {
+		return fmt.Errorf("worktree has not been initialized; run gitsnap init")
+	}
 	aliases := alias.Store{Path: ws.AliasPath()}
-	backend := gogit.Backend{}
 
 	switch args[0] {
-	case "init":
-		return backend.Init(ctx, ws.Worktree, ws.RepoDir())
 	case "save":
 		return save(ctx, backend, aliases, ws, args[1:])
 	case "resolve":
@@ -168,6 +182,16 @@ func listAliases(aliases alias.Store) error {
 		fmt.Printf("%s %s %s\n", name, rec.Hash, rec.UpdatedAt.Format("2006-01-02T15:04:05Z"))
 	}
 	return nil
+}
+
+func knownCommand(cmd string) bool {
+	switch cmd {
+	case "init", "cleanup", "save", "diff", "files", "restore",
+		"resolve", "aliases":
+		return true
+	default:
+		return false
+	}
 }
 
 func usage() {

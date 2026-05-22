@@ -60,6 +60,14 @@ func (s WorktreeStore) Ensure() error {
 	return os.MkdirAll(s.RepoDir(), 0o755)
 }
 
+func (s WorktreeStore) Initialized() (bool, error) {
+	_, err := os.Stat(s.RepoDir())
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 func (s WorktreeStore) Cleanup() error {
 	return os.RemoveAll(s.Root)
 }
