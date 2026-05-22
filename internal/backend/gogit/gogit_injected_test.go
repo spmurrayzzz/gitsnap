@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/go-git/go-billy/v5"
@@ -183,6 +185,9 @@ func TestInjectedHelperErrors(t *testing.T) {
 	worktree, store := dirs(t)
 	write(t, worktree, "a.txt", "hello\n")
 	write(t, worktree, "dir/a.txt", "hello\n")
+	if err := os.Symlink("a.txt", filepath.Join(worktree, "link")); err != nil {
+		t.Fatal(err)
+	}
 	backend := Backend{}
 	base, err := backend.Save(context.Background(), worktree, store)
 	if err != nil {
@@ -209,11 +214,44 @@ func TestInjectedHelperErrors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := removeTarget(filepath.Join(worktree, "missing")); err != nil {
+		t.Fatal(err)
+	}
+	lstatFunc = func(string) (os.FileInfo, error) {
+		return nil, errors.New("lstat")
+	}
+	if err := removeTarget(filepath.Join(worktree, "a.txt")); err == nil {
+		t.Fatal("expected remove target lstat error")
+	}
+	if err := removeTargetIfConflict(filepath.Join(worktree, "a.txt")); err == nil {
+		t.Fatal("expected conflict lstat error")
+	}
+	if err := writeFile(worktree, "lstat.txt", file); err == nil {
+		t.Fatal("expected conflict error")
+	}
+	resetInjected()
+	if err := removeTargetIfConflict(filepath.Join(worktree, "missing")); err != nil {
+		t.Fatal(err)
+	}
+
 	fileReaderFunc = func(*object.File) (io.ReadCloser, error) {
 		return nil, errors.New("reader")
 	}
 	if err := writeFile(worktree, "reader.txt", file); err == nil {
 		t.Fatal("expected reader error")
+	}
+	resetInjected()
+
+	symlinkFile, err := root.File("link")
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, worktree, "existing", "x")
+	removeAllFunc = func(string) error {
+		return errors.New("remove")
+	}
+	if err := writeFile(worktree, "existing", symlinkFile); err == nil {
+		t.Fatal("expected symlink remove error")
 	}
 	resetInjected()
 
@@ -274,4 +312,8 @@ func resetInjected() {
 	fileReaderFunc = defaultFileReader
 	copyFunc = io.Copy
 	treeFunc = defaultTree
+	lstatFunc = os.Lstat
+	removeAllFunc = os.RemoveAll
+	symlinkFunc = os.Symlink
+	writeDiskFileFunc = os.WriteFile
 }

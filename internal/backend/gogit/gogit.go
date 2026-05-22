@@ -43,6 +43,10 @@ var fileSetFunc = fileSet
 var fileReaderFunc = defaultFileReader
 var copyFunc = io.Copy
 var treeFunc = defaultTree
+var lstatFunc = os.Lstat
+var removeAllFunc = os.RemoveAll
+var symlinkFunc = os.Symlink
+var writeDiskFileFunc = os.WriteFile
 
 func defaultPatch(
 	ctx context.Context,
@@ -510,12 +514,40 @@ func writeFile(worktree string, name string, file *object.File) error {
 		return err
 	}
 	if file.Mode == filemode.Symlink {
-		_ = os.Remove(target)
-		return os.Symlink(string(buf.Bytes()), target)
+		if err := removeTarget(target); err != nil {
+			return err
+		}
+		return symlinkFunc(string(buf.Bytes()), target)
+	}
+	if err := removeTargetIfConflict(target); err != nil {
+		return err
 	}
 	mode := os.FileMode(0o644)
 	if file.Mode == filemode.Executable {
 		mode = 0o755
 	}
-	return os.WriteFile(target, buf.Bytes(), mode)
+	return writeDiskFileFunc(target, buf.Bytes(), mode)
+}
+
+func removeTarget(target string) error {
+	if _, err := lstatFunc(target); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	return removeAllFunc(target)
+}
+
+func removeTargetIfConflict(target string) error {
+	info, err := lstatFunc(target)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return removeAllFunc(target)
+	}
+	return nil
 }

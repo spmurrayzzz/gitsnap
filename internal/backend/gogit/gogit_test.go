@@ -125,6 +125,67 @@ func TestRestorePath(t *testing.T) {
 	}
 }
 
+func TestRestoreRegularFileReplacesSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink permissions vary on windows")
+	}
+	worktree, store := dirs(t)
+	write(t, worktree, "a.txt", "snapshot\n")
+
+	backend := Backend{}
+	base, err := backend.Save(context.Background(), worktree, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	outside := filepath.Join(t.TempDir(), "outside")
+	if err := os.WriteFile(outside, []byte("outside\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(worktree, "a.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(worktree, "a.txt")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := backend.Restore(context.Background(), worktree, store, base, []string{"a.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, worktree, "a.txt"); got != "snapshot\n" {
+		t.Fatalf("a.txt = %q", got)
+	}
+	if got := readFile(t, outside); got != "outside\n" {
+		t.Fatalf("outside = %q", got)
+	}
+	if _, err := os.Readlink(filepath.Join(worktree, "a.txt")); err == nil {
+		t.Fatal("a.txt is still a symlink")
+	}
+}
+
+func TestRestoreFileDirectoryConflict(t *testing.T) {
+	worktree, store := dirs(t)
+	write(t, worktree, "d", "snapshot\n")
+
+	backend := Backend{}
+	base, err := backend.Save(context.Background(), worktree, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Remove(filepath.Join(worktree, "d")); err != nil {
+		t.Fatal(err)
+	}
+	write(t, worktree, "d/a.txt", "current\n")
+
+	if err := backend.Restore(context.Background(), worktree, store, base, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, worktree, "d"); got != "snapshot\n" {
+		t.Fatalf("d = %q", got)
+	}
+}
+
 func TestRestoreSymlinkAndExecutable(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink permissions vary on windows")
@@ -193,7 +254,12 @@ func write(t *testing.T, root string, name string, content string) {
 
 func read(t *testing.T, root string, name string) string {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(name)))
+	return readFile(t, filepath.Join(root, filepath.FromSlash(name)))
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
