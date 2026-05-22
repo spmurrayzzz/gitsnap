@@ -25,6 +25,7 @@ gitsnap restore before-refactor -- path/to/file
 gitsnap restore before-refactor
 gitsnap aliases
 gitsnap resolve before-refactor
+gitsnap cleanup
 ```
 
 Use another worktree with:
@@ -40,3 +41,5 @@ Snapshots are stored per worktree under:
 - `$GITSNAP_HOME`, if set
 - `$XDG_DATA_HOME/gitsnap`, if set
 - `~/.local/share/gitsnap`, otherwise
+
+Use `gitsnap cleanup` to remove all gitsnap data for the current worktree.

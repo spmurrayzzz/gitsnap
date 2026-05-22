@@ -98,11 +98,37 @@ func TestRunCommands(t *testing.T) {
 	}
 }
 
+func TestRunCleanup(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("GITSNAP_HOME", home)
+	worktree := filepath.Join(t.TempDir(), "worktree")
+	if err := os.MkdirAll(worktree, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(context.Background(), []string{"--worktree", worktree, "init"}); err != nil {
+		t.Fatal(err)
+	}
+	ws, err := store.ForWorktree(worktree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(ws.RepoDir()); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(context.Background(), []string{"--worktree", worktree, "cleanup"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(ws.Root); !os.IsNotExist(err) {
+		t.Fatalf("root still exists: %v", err)
+	}
+}
+
 func TestRunUsageErrors(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("GITSNAP_HOME", home)
 	worktree := t.TempDir()
 	for _, args := range [][]string{
+		{"cleanup", "extra"},
 		{"save", "extra"},
 		{"resolve"},
 		{"resolve", "a", "b"},

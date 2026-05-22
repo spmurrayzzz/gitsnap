@@ -33,4 +33,10 @@ func TestForWorktreeUsesGitsnapHome(t *testing.T) {
 	if _, err := os.Stat(store.RepoDir()); err != nil {
 		t.Fatal(err)
 	}
+	if err := store.Cleanup(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(store.Root); !os.IsNotExist(err) {
+		t.Fatalf("root still exists: %v", err)
+	}
 }

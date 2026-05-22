@@ -42,6 +42,12 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	if args[0] == "cleanup" {
+		if len(args) != 1 {
+			return fmt.Errorf("usage: gitsnap cleanup")
+		}
+		return ws.Cleanup()
+	}
 	if err := ws.Ensure(); err != nil {
 		return err
 	}
@@ -169,6 +175,7 @@ func usage() {
 
 commands:
   init
+  cleanup
   save [--alias NAME]
   diff <snapshot-or-alias>
   files <snapshot-or-alias>
