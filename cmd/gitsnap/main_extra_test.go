@@ -49,9 +49,38 @@ func TestRunStoreEnsureError(t *testing.T) {
 	}
 }
 
+func TestRunCleanupError(t *testing.T) {
+	old := forWorktree
+	defer func() { forWorktree = old }()
+	home := filepath.Join(t.TempDir(), "home")
+	if err := os.WriteFile(home, []byte("file"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	forWorktree = func(string) (store.WorktreeStore, error) {
+		return store.WorktreeStore{Root: filepath.Join(home, "bad")}, nil
+	}
+	if err := run(context.Background(), []string{"cleanup"}); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestRunInitializedError(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home")
+	if err := os.WriteFile(home, []byte("file"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GITSNAP_HOME", home)
+	if err := run(context.Background(), []string{"aliases"}); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
 func TestRunResolveAndBackendErrors(t *testing.T) {
 	t.Setenv("GITSNAP_HOME", filepath.Join(t.TempDir(), "home"))
 	worktree := t.TempDir()
+	if err := run(context.Background(), []string{"--worktree", worktree, "init"}); err != nil {
+		t.Fatal(err)
+	}
 	for _, args := range [][]string{
 		{"resolve", "missing"},
 		{"diff", "missing"},
@@ -94,10 +123,10 @@ func TestSaveAndListAliasErrors(t *testing.T) {
 	ws, _ := commandDeps(t)
 	write(t, ws.Worktree, "a.txt", "hello\n")
 	badAliases := alias.Store{Path: t.TempDir()}
-	if err := save(context.Background(), gogit.Backend{}, badAliases, ws, []string{"--alias", "bad"}); err == nil {
+	if err := save(context.Background(), gogit.Backend{}, badAliases, ws, []string{"--alias", "bad"}, false); err == nil {
 		t.Fatal("expected alias save error")
 	}
-	if err := listAliases(badAliases); err == nil {
+	if err := listAliases(badAliases, false); err == nil {
 		t.Fatal("expected alias list error")
 	}
 }
@@ -106,14 +135,14 @@ func TestSaveBackendError(t *testing.T) {
 	ws, aliases := commandDeps(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := save(ctx, gogit.Backend{}, aliases, ws, nil); err == nil {
+	if err := save(ctx, gogit.Backend{}, aliases, ws, nil, false); err == nil {
 		t.Fatal("expected backend error")
 	}
 }
 
 func TestRestoreResolveError(t *testing.T) {
 	ws, aliases := commandDeps(t)
-	if err := restore(context.Background(), gogit.Backend{}, aliases, ws, []string{"missing"}); err == nil {
+	if err := restore(context.Background(), gogit.Backend{}, aliases, ws, []string{"missing"}, false); err == nil {
 		t.Fatal("expected resolve error")
 	}
 }

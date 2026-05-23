@@ -29,6 +29,7 @@ func run(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("gitsnap", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	worktree := fs.String("worktree", ".", "worktree path")
+	quiet := fs.Bool("quiet", false, "suppress status output")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -37,10 +38,6 @@ func run(ctx context.Context, args []string) error {
 		usage()
 		return nil
 	}
-	if !knownCommand(args[0]) {
-		return fmt.Errorf("unknown command %q", args[0])
-	}
-
 	ws, err := forWorktree(*worktree)
 	if err != nil {
 		return err
@@ -50,7 +47,11 @@ func run(ctx context.Context, args []string) error {
 		if len(args) != 1 {
 			return fmt.Errorf("usage: gitsnap cleanup")
 		}
-		return ws.Cleanup()
+		if err := ws.Cleanup(); err != nil {
+			return err
+		}
+		statusf(*quiet, "removed gitsnap storage\n")
+		return nil
 	}
 	if args[0] == "init" {
 		if len(args) != 1 {
@@ -59,7 +60,14 @@ func run(ctx context.Context, args []string) error {
 		if err := ws.Ensure(); err != nil {
 			return err
 		}
-		return backend.Init(ctx, ws.Worktree, ws.RepoDir())
+		err := backend.Init(ctx, ws.Worktree, ws.RepoDir())
+		if err == nil {
+			statusf(*quiet, "initialized gitsnap storage\n")
+		}
+		return err
+	}
+	if !needsInitialized(args[0]) {
+		return fmt.Errorf("unknown command %q", args[0])
 	}
 	initialized, err := ws.Initialized()
 	if err != nil {
@@ -70,10 +78,10 @@ func run(ctx context.Context, args []string) error {
 	}
 	aliases := alias.Store{Path: ws.AliasPath()}
 
-	switch args[0] {
-	case "save":
-		return save(ctx, backend, aliases, ws, args[1:])
-	case "resolve":
+	if args[0] == "save" {
+		return save(ctx, backend, aliases, ws, args[1:], *quiet)
+	}
+	if args[0] == "resolve" {
 		if len(args) != 2 {
 			return fmt.Errorf("usage: gitsnap resolve <alias>")
 		}
@@ -83,9 +91,11 @@ func run(ctx context.Context, args []string) error {
 		}
 		fmt.Println(h)
 		return nil
-	case "aliases":
-		return listAliases(aliases)
-	case "diff":
+	}
+	if args[0] == "aliases" {
+		return listAliases(aliases, *quiet)
+	}
+	if args[0] == "diff" {
 		if len(args) != 2 {
 			return fmt.Errorf("usage: gitsnap diff <snapshot-or-alias>")
 		}
@@ -97,9 +107,14 @@ func run(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
+		if len(out) == 0 {
+			statusf(*quiet, "no changes\n")
+			return nil
+		}
 		fmt.Print(string(out))
 		return nil
-	case "files":
+	}
+	if args[0] == "files" {
 		if len(args) != 2 {
 			return fmt.Errorf("usage: gitsnap files <snapshot-or-alias>")
 		}
@@ -111,15 +126,16 @@ func run(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
+		if len(files) == 0 {
+			statusf(*quiet, "no changed files\n")
+			return nil
+		}
 		for _, file := range files {
 			fmt.Println(file)
 		}
 		return nil
-	case "restore":
-		return restore(ctx, backend, aliases, ws, args[1:])
-	default:
-		return fmt.Errorf("unknown command %q", args[0])
 	}
+	return restore(ctx, backend, aliases, ws, args[1:], *quiet)
 }
 
 func save(
@@ -128,6 +144,7 @@ func save(
 	aliases alias.Store,
 	ws store.WorktreeStore,
 	args []string,
+	quiet bool,
 ) error {
 	fs := flag.NewFlagSet("save", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -147,7 +164,10 @@ func save(
 			return err
 		}
 	}
-	fmt.Println(h)
+	statusf(quiet, "saved snapshot %s\n", h)
+	if *name != "" {
+		statusf(quiet, "updated alias %s -> %s\n", *name, h)
+	}
 	return nil
 }
 
@@ -157,6 +177,7 @@ func restore(
 	aliases alias.Store,
 	ws store.WorktreeStore,
 	args []string,
+	quiet bool,
 ) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: gitsnap restore <snapshot-or-alias> [-- PATH...]")
@@ -169,13 +190,27 @@ func restore(
 	if len(paths) > 0 && paths[0] == "--" {
 		paths = paths[1:]
 	}
-	return backend.Restore(ctx, ws.Worktree, ws.RepoDir(), h, paths)
+	if err := backend.Restore(ctx, ws.Worktree, ws.RepoDir(), h, paths); err != nil {
+		return err
+	}
+	statusf(quiet, "restored snapshot %s\n", h)
+	return nil
 }
 
-func listAliases(aliases alias.Store) error {
+func statusf(quiet bool, format string, args ...any) {
+	if !quiet {
+		fmt.Printf(format, args...)
+	}
+}
+
+func listAliases(aliases alias.Store, quiet bool) error {
 	names, records, err := aliases.List()
 	if err != nil {
 		return err
+	}
+	if len(names) == 0 {
+		statusf(quiet, "no aliases\n")
+		return nil
 	}
 	for _, name := range names {
 		rec := records[name]
@@ -184,10 +219,9 @@ func listAliases(aliases alias.Store) error {
 	return nil
 }
 
-func knownCommand(cmd string) bool {
+func needsInitialized(cmd string) bool {
 	switch cmd {
-	case "init", "cleanup", "save", "diff", "files", "restore",
-		"resolve", "aliases":
+	case "save", "diff", "files", "restore", "resolve", "aliases":
 		return true
 	default:
 		return false
@@ -195,7 +229,7 @@ func knownCommand(cmd string) bool {
 }
 
 func usage() {
-	fmt.Println(strings.TrimSpace(`gitsnap [--worktree PATH] <command>
+	fmt.Println(strings.TrimSpace(`gitsnap [--worktree PATH] [--quiet] <command>
 
 commands:
   init

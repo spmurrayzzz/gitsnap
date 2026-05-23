@@ -20,7 +20,7 @@ func TestRunNoArgsShowsUsage(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	if !strings.Contains(out, "gitsnap [--worktree PATH] <command>") {
+	if !strings.Contains(out, "gitsnap [--worktree PATH] [--quiet] <command>") {
 		t.Fatalf("usage missing from %q", out)
 	}
 }
@@ -51,7 +51,7 @@ func TestRunCommands(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	hash := strings.TrimSpace(saveOut)
+	hash := strings.Fields(saveOut)[2]
 	if len(hash) != 40 {
 		t.Fatalf("hash = %q", hash)
 	}
@@ -123,12 +123,36 @@ func TestRunCleanup(t *testing.T) {
 	}
 }
 
+func TestQuietSuppressesStatus(t *testing.T) {
+	t.Setenv("GITSNAP_HOME", filepath.Join(t.TempDir(), "home"))
+	worktree := filepath.Join(t.TempDir(), "worktree")
+	if err := os.MkdirAll(worktree, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, worktree, "a.txt", "hello\n")
+	out := captureStdout(t, func() {
+		if err := run(context.Background(), []string{"--quiet", "--worktree", worktree, "init"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := run(context.Background(), []string{"--quiet", "--worktree", worktree, "save"}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if out != "" {
+		t.Fatalf("out = %q", out)
+	}
+}
+
 func TestRunUsageErrors(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("GITSNAP_HOME", home)
 	worktree := t.TempDir()
+	if err := run(context.Background(), []string{"--worktree", worktree, "init"}); err != nil {
+		t.Fatal(err)
+	}
 	for _, args := range [][]string{
 		{"cleanup", "extra"},
+		{"init", "extra"},
 		{"save", "extra"},
 		{"resolve"},
 		{"resolve", "a", "b"},
@@ -137,6 +161,7 @@ func TestRunUsageErrors(t *testing.T) {
 		{"files"},
 		{"files", "a", "b"},
 		{"restore"},
+		{"nope"},
 	} {
 		full := append([]string{"--worktree", worktree}, args...)
 		if err := run(context.Background(), full); err == nil {
@@ -145,9 +170,35 @@ func TestRunUsageErrors(t *testing.T) {
 	}
 }
 
+func TestRunEmptyDiffAndFiles(t *testing.T) {
+	t.Setenv("GITSNAP_HOME", filepath.Join(t.TempDir(), "home"))
+	worktree := filepath.Join(t.TempDir(), "worktree")
+	if err := os.MkdirAll(worktree, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, worktree, "a.txt", "hello\n")
+	if err := run(context.Background(), []string{"--worktree", worktree, "init"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(context.Background(), []string{"--worktree", worktree, "save", "--alias", "same"}); err != nil {
+		t.Fatal(err)
+	}
+	out := captureStdout(t, func() {
+		if err := run(context.Background(), []string{"--worktree", worktree, "diff", "same"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := run(context.Background(), []string{"--worktree", worktree, "files", "same"}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if out != "no changes\nno changed files\n" {
+		t.Fatalf("out = %q", out)
+	}
+}
+
 func TestSaveFlagError(t *testing.T) {
 	ws, aliases := commandDeps(t)
-	if err := save(context.Background(), gogit.Backend{}, aliases, ws, []string{"--bad"}); err == nil {
+	if err := save(context.Background(), gogit.Backend{}, aliases, ws, []string{"--bad"}, false); err == nil {
 		t.Fatal("expected error")
 	}
 }
@@ -164,7 +215,7 @@ func TestRestoreWithNoPathSeparator(t *testing.T) {
 		t.Fatal(err)
 	}
 	write(t, ws.Worktree, "a.txt", "world\n")
-	if err := restore(context.Background(), backend, aliases, ws, []string{"first", "a.txt"}); err != nil {
+	if err := restore(context.Background(), backend, aliases, ws, []string{"first", "a.txt"}, false); err != nil {
 		t.Fatal(err)
 	}
 	if got := read(t, ws.Worktree, "a.txt"); got != "hello\n" {
@@ -197,11 +248,11 @@ func TestRunBeforeInitErrors(t *testing.T) {
 
 func TestListAliasesEmpty(t *testing.T) {
 	out := captureStdout(t, func() {
-		if err := listAliases(alias.Store{Path: filepath.Join(t.TempDir(), "aliases.json")}); err != nil {
+		if err := listAliases(alias.Store{Path: filepath.Join(t.TempDir(), "aliases.json")}, false); err != nil {
 			t.Fatal(err)
 		}
 	})
-	if out != "" {
+	if out != "no aliases\n" {
 		t.Fatalf("out = %q", out)
 	}
 }
