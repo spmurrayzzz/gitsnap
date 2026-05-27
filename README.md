@@ -14,6 +14,15 @@ make build
 
 This writes `bin/gitsnap`.
 
+Build the shared library for Node.js FFI bindings with:
+
+```sh
+make build-lib
+```
+
+This writes `bin/libgitsnap.dylib`, `bin/libgitsnap.so`, or
+`bin/libgitsnap.dll`, depending on the platform.
+
 ## Usage
 
 ```sh
@@ -32,6 +41,31 @@ Use another worktree with:
 
 ```sh
 gitsnap --worktree /path/to/project save --alias checkpoint
+```
+
+## Node.js
+
+Install from GitHub with:
+
+```sh
+npm install github:spmurrayzzz/gitsnap
+```
+
+The install builds the native shared library locally, so Go and a CGO-capable C
+compiler must be available.
+
+```js
+const gitsnap = require("gitsnap");
+
+gitsnap.init({ worktree: "/path/to/project" });
+
+const hash = gitsnap.save({
+  worktree: "/path/to/project",
+  alias: "checkpoint"
+});
+
+console.log(hash);
+console.log(gitsnap.aliases({ worktree: "/path/to/project" }));
 ```
 
 ## How it works
