@@ -8,6 +8,19 @@ checkpoints that should not become commits, stashes, or branches.
 
 ## Build
 
+Building the CLI requires Go 1.25.1 or newer.
+
+Building the Node.js FFI shared library also requires CGO and a native C
+compiler toolchain:
+
+- macOS: Xcode Command Line Tools
+- Linux: GCC or Clang with libc development headers
+- Windows: a CGO-compatible C compiler such as MinGW-w64
+
+Installing the Node.js package from GitHub also requires Node.js, npm, Go, and
+that same native C compiler toolchain because the shared library is built during
+install.
+
 ```sh
 make build
 ```
@@ -54,8 +67,8 @@ Install from GitHub with:
 npm install github:spmurrayzzz/gitsnap
 ```
 
-The install builds the native shared library locally, so Go and a CGO-capable C
-compiler must be available.
+The install builds the native shared library locally, so the build toolchains
+listed above must be available.
 
 ```js
 const gitsnap = require("gitsnap");
