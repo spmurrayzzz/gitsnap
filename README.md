@@ -45,6 +45,9 @@ gitsnap --worktree /path/to/project save --alias checkpoint
 
 ## Node.js
 
+This repository includes a Node.js FFI API and a pi skill under
+`skills/gitsnap-node/` to help AI agents use the library correctly.
+
 Install from GitHub with:
 
 ```sh
