@@ -58,17 +58,6 @@ func TestInjectedErrorBranches(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	statusFunc = func(*git.Worktree) (git.Status, error) {
-		return git.Status{
-			".git":        &git.FileStatus{},
-			".git/config": &git.FileStatus{},
-		}, nil
-	}
-	if _, err := backend.Save(context.Background(), worktree, store); err != nil {
-		t.Fatal(err)
-	}
-	resetInjected()
-
 	setIndexFunc = func(*git.Repository, *index.Index) error {
 		return errors.New("set index")
 	}
@@ -77,27 +66,15 @@ func TestInjectedErrorBranches(t *testing.T) {
 	}
 	resetInjected()
 
-	statusFunc = func(*git.Worktree) (git.Status, error) {
-		return nil, errors.New("status")
+	snapshotIndexFunc = func(
+		context.Context,
+		storage.Storer,
+		billy.Filesystem,
+	) (*index.Index, error) {
+		return nil, errors.New("snapshot index")
 	}
 	if _, err := backend.Save(context.Background(), worktree, store); err == nil {
-		t.Fatal("expected status error")
-	}
-	resetInjected()
-
-	addFunc = func(*git.Worktree, string) error {
-		return errors.New("add")
-	}
-	if _, err := backend.Save(context.Background(), worktree, store); err == nil {
-		t.Fatal("expected add error")
-	}
-	resetInjected()
-
-	indexFunc = func(*git.Repository) (*index.Index, error) {
-		return nil, errors.New("index")
-	}
-	if _, err := backend.Save(context.Background(), worktree, store); err == nil {
-		t.Fatal("expected index error")
+		t.Fatal("expected snapshot index error")
 	}
 	resetInjected()
 
@@ -297,14 +274,12 @@ func TestDefaultInjectedFuncs(t *testing.T) {
 }
 
 func resetInjected() {
+	snapshotIndexFunc = snapshotIndex
 	buildTreeFunc = buildTree
 	getTreeFunc = object.GetTree
 	patchFunc = defaultPatch
 	diffFunc = defaultDiff
 	setIndexFunc = defaultSetIndex
-	statusFunc = defaultStatus
-	addFunc = defaultAdd
-	indexFunc = defaultIndex
 	gitOpenFunc = git.Open
 	gitInitFunc = git.Init
 	worktreeFunc = defaultWorktree

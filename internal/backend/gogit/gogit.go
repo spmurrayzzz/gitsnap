@@ -28,14 +28,12 @@ import (
 
 type Backend struct{}
 
+var snapshotIndexFunc = snapshotIndex
 var buildTreeFunc = buildTree
 var getTreeFunc = object.GetTree
 var patchFunc = defaultPatch
 var diffFunc = defaultDiff
 var setIndexFunc = defaultSetIndex
-var statusFunc = defaultStatus
-var addFunc = defaultAdd
-var indexFunc = defaultIndex
 var gitOpenFunc = git.Open
 var gitInitFunc = git.Init
 var worktreeFunc = defaultWorktree
@@ -68,18 +66,6 @@ func defaultSetIndex(r *git.Repository, idx *index.Index) error {
 	return r.Storer.SetIndex(idx)
 }
 
-func defaultStatus(wt *git.Worktree) (git.Status, error) {
-	return wt.Status()
-}
-
-func defaultAdd(wt *git.Worktree, p string) error {
-	return wt.AddWithOptions(&git.AddOptions{Path: p})
-}
-
-func defaultIndex(r *git.Repository) (*index.Index, error) {
-	return r.Storer.Index()
-}
-
 func defaultWorktree(r *git.Repository) (*git.Worktree, error) {
 	return r.Worktree()
 }
@@ -109,30 +95,11 @@ func (Backend) Save(
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	wt.Excludes = append(wt.Excludes, gitignore.ParsePattern(".git/", nil))
-	if err := setIndexFunc(r, &index.Index{Version: 2}); err != nil {
-		return "", err
-	}
-	status, err := statusFunc(wt)
+	idx, err := snapshotIndexFunc(ctx, r.Storer, wt.Filesystem)
 	if err != nil {
 		return "", err
 	}
-	paths := make([]string, 0, len(status))
-	for p := range status {
-		p = filepath.ToSlash(p)
-		if p == ".git" || strings.HasPrefix(p, ".git/") {
-			continue
-		}
-		paths = append(paths, p)
-	}
-	sort.Strings(paths)
-	for _, p := range paths {
-		if err := addFunc(wt, p); err != nil {
-			return "", err
-		}
-	}
-	idx, err := indexFunc(r)
-	if err != nil {
+	if err := setIndexFunc(r, idx); err != nil {
 		return "", err
 	}
 	h, err := buildTreeFunc(r.Storer, idx)
@@ -351,6 +318,173 @@ func isGitPath(name string) bool {
 		}
 	}
 	return false
+}
+
+func snapshotIndex(
+	ctx context.Context,
+	s storage.Storer,
+	fs billy.Filesystem,
+) (*index.Index, error) {
+	patterns, err := gitignore.ReadPatterns(fs, nil)
+	if err != nil {
+		return nil, err
+	}
+	patterns = append(patterns, gitignore.ParsePattern(".git/", nil))
+	matcher := gitignore.NewMatcher(patterns)
+	idx := &index.Index{Version: 2}
+	if err := walkSnapshot(ctx, s, fs, idx, matcher, ""); err != nil {
+		return nil, err
+	}
+	sort.Slice(idx.Entries, func(i int, j int) bool {
+		return idx.Entries[i].Name < idx.Entries[j].Name
+	})
+	return idx, nil
+}
+
+func walkSnapshot(
+	ctx context.Context,
+	s storage.Storer,
+	fs billy.Filesystem,
+	idx *index.Index,
+	matcher gitignore.Matcher,
+	dir string,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	infos, err := fs.ReadDir(snapshotPath(dir))
+	if err != nil {
+		return err
+	}
+	for _, info := range infos {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		name := snapshotJoin(dir, info.Name())
+		if isGitPath(name) || matcher.Match(snapshotParts(name), info.IsDir()) {
+			continue
+		}
+		if info.IsDir() {
+			if err := walkSnapshot(ctx, s, fs, idx, matcher, name); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := addSnapshotFile(ctx, s, fs, idx, name, info); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func addSnapshotFile(
+	ctx context.Context,
+	s storage.Storer,
+	fs billy.Filesystem,
+	idx *index.Index,
+	name string,
+	info os.FileInfo,
+) error {
+	mode, err := filemode.NewFromOSFileMode(info.Mode())
+	if err != nil {
+		return err
+	}
+	h, size, err := copySnapshotFile(ctx, s, fs, name, info)
+	if err != nil {
+		return err
+	}
+	e := idx.Add(name)
+	e.Hash = h
+	e.ModifiedAt = info.ModTime()
+	e.Mode = mode
+	e.Size = uint32(size)
+	return nil
+}
+
+func copySnapshotFile(
+	ctx context.Context,
+	s storage.Storer,
+	fs billy.Filesystem,
+	name string,
+	info os.FileInfo,
+) (hash plumbing.Hash, size int64, err error) {
+	obj := s.NewEncodedObject()
+	obj.SetType(plumbing.BlobObject)
+	size = info.Size()
+	if info.Mode()&os.ModeSymlink != 0 {
+		target, err := fs.Readlink(snapshotPath(name))
+		if err != nil {
+			return plumbing.ZeroHash, 0, err
+		}
+		size = int64(len(target))
+		obj.SetSize(size)
+		if err := writeSnapshotBlob(obj, strings.NewReader(target)); err != nil {
+			return plumbing.ZeroHash, 0, err
+		}
+		hash, err = s.SetEncodedObject(obj)
+		return hash, size, err
+	}
+	obj.SetSize(size)
+	file, err := fs.Open(snapshotPath(name))
+	if err != nil {
+		return plumbing.ZeroHash, 0, err
+	}
+	defer closeWithError(file, &err)
+	reader := contextReader{ctx: ctx, r: file}
+	if err := writeSnapshotBlob(obj, reader); err != nil {
+		return plumbing.ZeroHash, 0, err
+	}
+	hash, err = s.SetEncodedObject(obj)
+	return hash, size, err
+}
+
+func writeSnapshotBlob(obj plumbing.EncodedObject, r io.Reader) (err error) {
+	writer, err := obj.Writer()
+	if err != nil {
+		return err
+	}
+	defer closeWithError(writer, &err)
+	_, err = copyFunc(writer, r)
+	return err
+}
+
+func snapshotPath(name string) string {
+	if name == "" {
+		return "."
+	}
+	return filepath.FromSlash(name)
+}
+
+func snapshotJoin(dir string, name string) string {
+	if dir == "" {
+		return filepath.ToSlash(name)
+	}
+	return dir + "/" + filepath.ToSlash(name)
+}
+
+func snapshotParts(name string) []string {
+	if name == "" {
+		return nil
+	}
+	return strings.Split(name, "/")
+}
+
+type contextReader struct {
+	ctx context.Context
+	r   io.Reader
+}
+
+func (r contextReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.r.Read(p)
+}
+
+func closeWithError(c io.Closer, err *error) {
+	if closeErr := c.Close(); *err == nil {
+		*err = closeErr
+	}
 }
 
 func buildTree(s storage.Storer, idx *index.Index) (plumbing.Hash, error) {
