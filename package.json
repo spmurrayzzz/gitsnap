@@ -1,0 +1,30 @@
+{
+  "name": "gitsnap",
+  "version": "0.0.0",
+  "description": "Minimal, git-driven local project snapshots.",
+  "homepage": "https://github.com/spmurrayzzz/gitsnap#readme",
+  "bugs": {
+    "url": "https://github.com/spmurrayzzz/gitsnap/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/spmurrayzzz/gitsnap.git"
+  },
+  "license": "Apache-2.0",
+  "type": "commonjs",
+  "main": "node/index.js",
+  "types": "node/index.d.ts",
+  "files": [
+    "node",
+    "bin/libgitsnap.dylib",
+    "bin/libgitsnap.so",
+    "bin/libgitsnap.dll"
+  ],
+  "scripts": {
+    "build:lib": "node scripts/build-lib.js",
+    "prepare": "node scripts/build-lib.js"
+  },
+  "dependencies": {
+    "koffi": "^3.0.0"
+  }
+}
