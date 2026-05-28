@@ -71,18 +71,23 @@ The install builds the native shared library locally, so the build toolchains
 listed above must be available.
 
 ```js
-const gitsnap = require("gitsnap");
+import gitsnap from "gitsnap";
 
-gitsnap.init({ worktree: "/path/to/project" });
+const worktree = "/path/to/project";
 
-const hash = gitsnap.save({
-  worktree: "/path/to/project",
+await gitsnap.init({ worktree });
+
+const hash = await gitsnap.save({
+  worktree,
   alias: "checkpoint"
 });
 
 console.log(hash);
-console.log(gitsnap.aliases({ worktree: "/path/to/project" }));
+console.log(await gitsnap.aliases({ worktree }));
 ```
+
+The default Node.js API is async. Blocking variants are available under
+`gitsnap.sync`.
 
 ## How it works
 

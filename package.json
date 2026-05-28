@@ -22,6 +22,7 @@
   ],
   "scripts": {
     "build:lib": "node scripts/build-lib.js",
+    "node-smoke-test": "node scripts/node-smoke-test.js",
     "prepare": "node scripts/build-lib.js"
   },
   "dependencies": {

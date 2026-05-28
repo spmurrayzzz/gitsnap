@@ -1,6 +1,6 @@
 ---
 name: gitsnap-node
-description: Helps agents use the gitsnap Node.js FFI API for local project snapshots. Use when writing JavaScript or TypeScript code that imports gitsnap, calls init/save/diff/files/restore/aliases/cleanup, or installs gitsnap from GitHub with npm.
+description: Helps agents use the gitsnap Node.js FFI API for local project snapshots. Use when writing JavaScript or TypeScript code that imports gitsnap, calls init/save/diff/files/restore/aliases/cleanup, awaits gitsnap methods, uses gitsnap.sync, or installs gitsnap from GitHub with npm.
 ---
 
 # Gitsnap Node.js API
@@ -23,19 +23,19 @@ import gitsnap from "gitsnap";
 
 const worktree = "/path/to/project";
 
-gitsnap.init({ worktree });
+await gitsnap.init({ worktree });
 
-const hash = gitsnap.save({
+const hash = await gitsnap.save({
   worktree,
   alias: "checkpoint"
 });
 
 console.log(hash);
-console.log(gitsnap.aliases({ worktree }));
+console.log(await gitsnap.aliases({ worktree }));
 ```
 
-All methods are synchronous. If `worktree` is omitted, gitsnap uses the current
-working directory.
+The default API is async and returns promises. If `worktree` is omitted, gitsnap
+uses the current working directory.
 
 ## API
 
@@ -44,7 +44,7 @@ working directory.
 Initializes gitsnap storage for a worktree.
 
 ```js
-gitsnap.init({ worktree });
+await gitsnap.init({ worktree });
 ```
 
 ### `save(options)`
@@ -52,7 +52,7 @@ gitsnap.init({ worktree });
 Saves the current worktree and returns the snapshot hash. `alias` is optional.
 
 ```js
-const hash = gitsnap.save({ worktree, alias: "before-refactor" });
+const hash = await gitsnap.save({ worktree, alias: "before-refactor" });
 ```
 
 ### `resolve(ref, options)`
@@ -60,7 +60,7 @@ const hash = gitsnap.save({ worktree, alias: "before-refactor" });
 Resolves an alias or hash and returns the snapshot hash.
 
 ```js
-const hash = gitsnap.resolve("before-refactor", { worktree });
+const hash = await gitsnap.resolve("before-refactor", { worktree });
 ```
 
 ### `diff(ref, options)`
@@ -68,7 +68,7 @@ const hash = gitsnap.resolve("before-refactor", { worktree });
 Returns a git-style diff between the current worktree and a snapshot.
 
 ```js
-const patch = gitsnap.diff("before-refactor", { worktree });
+const patch = await gitsnap.diff("before-refactor", { worktree });
 ```
 
 ### `files(ref, options)`
@@ -76,7 +76,7 @@ const patch = gitsnap.diff("before-refactor", { worktree });
 Returns changed file paths between the current worktree and a snapshot.
 
 ```js
-const files = gitsnap.files("before-refactor", { worktree });
+const files = await gitsnap.files("before-refactor", { worktree });
 ```
 
 ### `restore(ref, options)`
@@ -84,9 +84,9 @@ const files = gitsnap.files("before-refactor", { worktree });
 Restores a full snapshot, or only selected paths.
 
 ```js
-gitsnap.restore("before-refactor", { worktree });
+await gitsnap.restore("before-refactor", { worktree });
 
-gitsnap.restore("before-refactor", {
+await gitsnap.restore("before-refactor", {
   worktree,
   paths: ["src/index.js"]
 });
@@ -97,7 +97,7 @@ gitsnap.restore("before-refactor", {
 Returns aliases sorted by name.
 
 ```js
-const aliases = gitsnap.aliases({ worktree });
+const aliases = await gitsnap.aliases({ worktree });
 ```
 
 Each alias has this shape:
@@ -115,7 +115,15 @@ Each alias has this shape:
 Removes all gitsnap storage for a worktree.
 
 ```js
-gitsnap.cleanup({ worktree });
+await gitsnap.cleanup({ worktree });
+```
+
+## Sync API
+
+Blocking variants are available under `gitsnap.sync`.
+
+```js
+const hash = gitsnap.sync.save({ worktree, alias: "checkpoint" });
 ```
 
 ## Troubleshooting
@@ -127,14 +135,14 @@ If `save`, `diff`, `files`, `restore`, `aliases`, or `resolve` fails with
 Bad:
 
 ```js
-gitsnap.init({ worktree: "/path/to/repo" });
-gitsnap.save({ worktree: "/Users/me/project" });
+await gitsnap.init({ worktree: "/path/to/repo" });
+await gitsnap.save({ worktree: "/Users/me/project" });
 ```
 
 Good:
 
 ```js
 const worktree = "/Users/me/project";
-gitsnap.init({ worktree });
-gitsnap.save({ worktree });
+await gitsnap.init({ worktree });
+await gitsnap.save({ worktree });
 ```
